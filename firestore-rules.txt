@@ -1,0 +1,36 @@
+// REGRAS DO FIRESTORE — Análise de Visitação · Planik
+// Cole em: console do Firebase → Firestore Database → Regras → Publicar
+//
+// O que elas garantem (no servidor, não só na tela):
+// - Qualquer pessoa consegue CONSULTAR um e-mail específico (necessário para a
+//   tela de login dizer "primeiro acesso" ou "não liberado") — mas NÃO consegue
+//   listar todos os e-mails cadastrados.
+// - Só o admin (perfil 'admin' e ativo) lista, cria e desativa acessos.
+// - Cada pessoa só consegue marcar o próprio "senhaDefinida" — nada mais.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function meuDoc() {
+      return get(/databases/$(database)/documents/acessos/$(request.auth.token.email)).data;
+    }
+    function souAdmin() {
+      return request.auth != null
+        && meuDoc().perfil == 'admin'
+        && meuDoc().ativo == true;
+    }
+
+    match /acessos/{email} {
+      allow get: if true;              // login precisa checar um e-mail por vez
+      allow list: if souAdmin();       // só o admin vê a lista completa
+      allow create, delete: if souAdmin();
+      allow update: if souAdmin()
+        || (request.auth != null
+            && request.auth.token.email == email
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['senhaDefinida']));
+    }
+
+    match /{tudo=**} { allow read, write: if false; }  // resto: negado
+  }
+}
