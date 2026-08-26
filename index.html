@@ -1628,6 +1628,24 @@ function mkEscopo(sess){
   const v=sess.vinculo||'';
   return r=>p.escopo(r,v);
 }
+/* "Ver como": o admin enxerga o BI exatamente como outra conta veria.
+   Não mexe no login — só troca o recorte (ESCOPO) e as abas, e remonta o BI. */
+let VISAO=null;
+function aplicarVisao(){
+  const alvo=VISAO||SESSAO;
+  window.ESCOPO=mkEscopo(alvo);
+  window.TAB_VISIVEL=k=>k!=='dados'||alvo.perfil==='admin';
+  try{iniciarBI()}catch(e){console.error(e)}
+  const bg=document.getElementById('btn-gear');
+  if(bg)bg.style.display=(SESSAO&&SESSAO.perfil==='admin'&&!VISAO)?'':'none';
+  let bar=document.getElementById('verComoBar');
+  if(VISAO){
+    if(!bar){bar=document.createElement('div');bar.id='verComoBar';document.body.appendChild(bar)}
+    bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:400;background:var(--gold);color:#fff;padding:9px 10px 9px 18px;border-radius:999px;box-shadow:0 10px 28px rgba(0,0,0,.3);font-size:13px;display:flex;gap:12px;align-items:center;max-width:92vw;flex-wrap:wrap';
+    bar.innerHTML=`<span>👁 Vendo como <b>${eL(VISAO.email)}</b> · ${eL(PERFIS[VISAO.perfil]?.lb||VISAO.perfil)}${VISAO.vinculo?' — '+eL(VISAO.vinculo):''}</span><button id="verComoSair" style="border:0;border-radius:999px;padding:7px 14px;background:#fff;color:#8a6b20;font-weight:700;cursor:pointer;font:inherit;font-weight:700">voltar ao meu acesso</button>`;
+    bar.querySelector('#verComoSair').onclick=()=>{VISAO=null;aplicarVisao()};
+  }else if(bar)bar.remove();
+}
 async function entrarSessao(conta){
   SESSAO={email:conta.email,perfil:conta.perfil,vinculo:conta.vinculo||null};
   window.ESCOPO=mkEscopo(SESSAO);window.TAB_VISIVEL=k=>k!=='dados'||SESSAO.perfil==='admin';
@@ -1653,18 +1671,28 @@ async function entrarSessao(conta){
 async function abrirGear(){
   const mb=document.getElementById('mback'),md=document.getElementById('modal');
   const pinta=(lista,aviso)=>{
-    const linhas=lista.map(d=>`
-      <tr><td><b>${eL(d.email)}</b></td>
-      <td>${PERFIS[d.perfil]?.lb||eL(d.perfil||'—')}</td>
-      <td>${eL(d.vinculo||'—')}</td>
+    const opVinc=(tipo,cur)=>{ // select de vínculo (gerente ou stand) com o atual pré-marcado
+      const src=tipo==='gerente'?(window.LISTAS_VINCULO?.gerentes||[]):(window.LISTAS_VINCULO?.stands||[]);
+      const opts=[...new Set(cur?[cur,...src]:src)];
+      return `<select class="icon-btn gr-vinc" style="padding:6px 8px;max-width:170px"><option value="">— ${tipo} —</option>${opts.map(g=>`<option${g===cur?' selected':''}>${eL(g)}</option>`).join('')}</select>`;
+    };
+    const linhas=lista.map((d,i)=>{
+      const eu=d.email===SESSAO.email, p=PERFIS[d.perfil];
+      return `
+      <tr data-i="${i}"><td><b>${eL(d.email)}</b></td>
+      <td>${eu?(p?.lb||eL(d.perfil||'—'))
+            :`<select class="icon-btn gr-perfil" style="padding:6px 8px">${Object.entries(PERFIS).map(([k,pp])=>`<option value="${k}"${k===d.perfil?' selected':''}>${pp.lb}</option>`).join('')}</select>`}</td>
+      <td class="gr-vc">${eu?eL(d.vinculo||'—'):(p?.vinculo?opVinc(p.vinculo,d.vinculo||''):'—')}</td>
       <td>${d.ativo!==false?'<span class="pill" style="color:var(--good);background:var(--good-bg)">ATIVO</span>':'<span class="pill" style="color:var(--bad);background:var(--bad-bg)">DESATIVADO</span>'}</td>
       <td>${d.senhaDefinida?'sim':'<span style="color:var(--muted)">aguardando 1º acesso</span>'}</td>
-      <td class="r">${d.email===SESSAO.email?'<span class="subtle">você</span>':`<button class="icon-btn" data-tg="${eL(d.email)}" data-at="${d.ativo!==false?0:1}">${d.ativo!==false?'Desativar':'Reativar'}</button>`}</td></tr>`).join('');
+      <td class="r" style="white-space:nowrap"><button class="icon-btn gr-ver" title="Ver o BI como esta conta vê">👁 Ver como</button>${eu?' <span class="subtle">você</span>':`
+        <button class="icon-btn gr-sv" style="display:none;background:var(--gold);color:#fff;border-color:var(--gold)">Salvar</button>
+        <button class="icon-btn gr-tg">${d.ativo!==false?'Desativar':'Reativar'}</button>`}</td></tr>`}).join('');
     const gers=(window.LISTAS_VINCULO?.gerentes||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     const emps=(window.LISTAS_VINCULO?.stands||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     md.innerHTML=`
       <div class="mh"><h2>⚙ Acessos — quem pode entrar</h2><button class="x" id="mx">✕</button></div>
-      <div class="empty" style="text-align:left;padding:4px 0 12px">Só entra quem estiver liberado aqui. Desativar corta o acesso na hora (a pessoa cai no aviso "acesso desativado"). Senhas são geridas pelo Firebase — para redefinir uma senha, use o console (Authentication → usuário → Reset password).</div>
+      <div class="empty" style="text-align:left;padding:4px 0 12px">Só entra quem estiver liberado aqui. Para trocar o perfil ou o vínculo de alguém, mude na própria linha e clique em <b>Salvar</b> (vale a partir do próximo login da pessoa). <b>👁 Ver como</b> mostra o BI exatamente como aquela conta vê. Desativar corta o acesso na hora. Senhas são geridas pelo Firebase — para redefinir, console → Authentication → usuário → Reset password.</div>
       ${aviso?`<div class="empty" style="text-align:left;color:var(--warn);padding:0 0 10px">${aviso}</div>`:''}
       <div class="vtable-wrap"><table class="tbl"><thead><tr><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th>Status</th><th>Senha</th><th></th></tr></thead>
       <tbody>${linhas||'<tr><td colspan="6" class="empty">ninguém liberado ainda</td></tr>'}</tbody></table></div>
@@ -1683,10 +1711,40 @@ async function abrirGear(){
       md.querySelector('#ng-vinc-g').style.display=p?.vinculo==='gerente'?'':'none';
       md.querySelector('#ng-vinc-s').style.display=p?.vinculo==='stand'?'':'none'};
     selP.onchange=mostraVinc;mostraVinc();
-    md.querySelectorAll('[data-tg]').forEach(b=>b.onclick=async()=>{
-      if(DEMO)return abrirGear();
-      await DB.collection('acessos').doc(b.dataset.tg).update({ativo:b.dataset.at==='1'});
-      abrirGear();
+    // fiação por linha: editar perfil/vínculo, salvar, ver como, ativar/desativar
+    md.querySelectorAll('tr[data-i]').forEach(tr=>{
+      const d=lista[+tr.dataset.i];
+      const selPf=tr.querySelector('.gr-perfil'), vc=tr.querySelector('.gr-vc'),
+            bSv=tr.querySelector('.gr-sv'), bTg=tr.querySelector('.gr-tg'), bVer=tr.querySelector('.gr-ver');
+      const mudou=()=>{if(bSv)bSv.style.display=''};
+      if(selPf)selPf.onchange=()=>{
+        const t=PERFIS[selPf.value]?.vinculo;
+        vc.innerHTML=t?opVinc(t,(PERFIS[d.perfil]?.vinculo===t?d.vinculo:'')||''):'—';
+        const nv=vc.querySelector('.gr-vinc'); if(nv)nv.onchange=mudou;
+        mudou();
+      };
+      const v0=vc?vc.querySelector('.gr-vinc'):null; if(v0)v0.onchange=mudou;
+      if(bSv)bSv.onclick=async()=>{
+        const perfil=selPf.value, p=PERFIS[perfil];
+        const vs=vc.querySelector('.gr-vinc');
+        const vinculo=p?.vinculo?(vs?vs.value:''):null;
+        const err=md.querySelector('#ng-erro');
+        if(p?.vinculo&&!vinculo)return err.textContent='Escolha o vínculo ('+p.vinculo+') de '+d.email+' antes de salvar.';
+        err.textContent='';
+        if(DEMO){DEMO_CONTAS[d.email]={...DEMO_CONTAS[d.email],perfil,vinculo:vinculo||null};return abrirGear()}
+        await DB.collection('acessos').doc(d.email).update({perfil,vinculo:vinculo||null});
+        abrirGear();
+      };
+      if(bTg)bTg.onclick=async()=>{
+        if(DEMO)return abrirGear();
+        await DB.collection('acessos').doc(d.email).update({ativo:d.ativo===false});
+        abrirGear();
+      };
+      if(bVer)bVer.onclick=()=>{
+        mb.classList.remove('open');document.body.style.overflow='';
+        VISAO={email:d.email,perfil:d.perfil,vinculo:d.vinculo||null};
+        aplicarVisao();
+      };
     });
     md.querySelector('#ng-ok').onclick=async()=>{
       const err=md.querySelector('#ng-erro');
