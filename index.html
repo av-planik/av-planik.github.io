@@ -1042,9 +1042,12 @@ function renderFbar(){
 }
 
 /* ---------- abas ---------- */
-function renderTabs(){
+// uma aba pode ser escondida por perfil (window.TAB_VISIVEL, definido no login)
+function abaOk(k){return typeof window.TAB_VISIVEL==='function'?!!window.TAB_VISIVEL(k):true}
+function abasVis(){const a=TABS.filter(([k])=>abaOk(k));return a.length?a:TABS}
+function renderTabs(){const ABAS=abasVis();if(!ABAS.some(([k])=>k===state.tab)){state.tab=ABAS[0][0];$$('.panel').forEach(p=>p.classList.remove('on'));const pn=$('#p-'+state.tab);if(pn)pn.classList.add('on')}
   const n=cur().length;
-  $('#tabs').innerHTML=TABS.map(([k,nm])=>
+  $('#tabs').innerHTML=ABAS.map(([k,nm])=>
     `<button class="tab${state.tab===k?' on':''}" data-tab="${k}">${nm}${k==='visitas'?`<span class="n num">${fmt(n)}</span>`:''}</button>`).join('');
   $$('#tabs .tab').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;
     $$('.panel').forEach(p=>p.classList.remove('on'));
@@ -1452,7 +1455,7 @@ function renderEquipe(){
 }
 
 function renderViews(){
-  renderResumo();renderRitmo();renderStands();renderEquipe();renderVisitas();renderDados();
+  renderResumo();renderRitmo();renderStands();renderEquipe();renderVisitas();if(abaOk('dados'))renderDados();else{const pd=$('#p-dados');if(pd)pd.innerHTML=''}
 }
 renderAll();
 
@@ -1627,7 +1630,7 @@ function mkEscopo(sess){
 }
 async function entrarSessao(conta){
   SESSAO={email:conta.email,perfil:conta.perfil,vinculo:conta.vinculo||null};
-  window.ESCOPO=mkEscopo(SESSAO);
+  window.ESCOPO=mkEscopo(SESSAO);window.TAB_VISIVEL=k=>k!=='dados'||SESSAO.perfil==='admin';
   await carregarDados();
   $L('#loginOverlay').style.display='none';
   document.body.classList.remove('locked');
