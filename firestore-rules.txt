@@ -6,7 +6,8 @@
 //   tela de login dizer "primeiro acesso" ou "não liberado") — mas NÃO consegue
 //   listar todos os e-mails cadastrados.
 // - Só o admin (perfil 'admin' e ativo) lista, cria, edita e desativa acessos.
-// - Cada pessoa só consegue marcar o próprio "senhaDefinida" — nada mais.
+// - Cada pessoa só consegue mexer no próprio "senhaDefinida"/"trocarSenha"
+//   (marcar que já definiu a senha e baixar a bandeira de troca exigida) — nada mais.
 // - log_acessos: cada pessoa logada só grava o PRÓPRIO acesso (email, perfil,
 //   quando); só o admin lê o log; ninguém edita nem apaga registros.
 
@@ -30,7 +31,7 @@ service cloud.firestore {
       allow update: if souAdmin()
         || (request.auth != null
             && request.auth.token.email == email
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['senhaDefinida']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['senhaDefinida','trocarSenha']));
     }
 
     match /log_acessos/{id} {

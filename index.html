@@ -340,9 +340,14 @@ body.locked .app-conteudo{filter:blur(7px);pointer-events:none;user-select:none}
 
   <div class="login" id="lg-p2a" style="display:none">
     <div class="mark">PLANIK</div>
-    <div class="t1">Primeiro acesso · defina sua senha</div>
+    <div class="t1" id="lg-t2a">Primeiro acesso · defina sua senha</div>
     <div class="sb" id="lg-quem-a"></div>
     <form onsubmit="return false">
+      <div class="fld" id="lg-fld-atual" style="display:none"><label for="lg-s0">Senha atual</label>
+        <div class="senha">
+          <input id="lg-s0" type="password" placeholder="a senha que você usa hoje" autocomplete="current-password">
+          <button type="button" class="olho lg-olho" data-alvo="lg-s0" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha"></button>
+        </div></div>
       <div class="fld"><label for="lg-s1">Nova senha</label>
         <div class="senha">
           <input id="lg-s1" type="password" placeholder="mínimo de 8 caracteres" autocomplete="new-password">
@@ -352,6 +357,7 @@ body.locked .app-conteudo{filter:blur(7px);pointer-events:none;user-select:none}
         <input id="lg-s2" type="password" placeholder="digite de novo" autocomplete="new-password"></div>
       <button type="button" id="lg-bt2a" class="btn">Salvar e entrar</button>
       <div class="err"></div>
+      <button type="button" id="lg-esqueci" style="display:none;margin:12px auto 0;background:none;border:0;color:#8d6d1c;font-size:12px;text-decoration:underline;cursor:pointer;font-family:inherit">esqueci minha senha atual — receber link por e-mail</button>
       <button type="button" class="lg-voltar">usar outro e-mail</button>
     </form>
   </div>
@@ -1581,9 +1587,22 @@ async function passoEmail(){
     if(d.ativo===false)return loginErro('Este acesso está desativado. Fale com o administrador.');
     window.__acesso={email,...d};
     $L('#lg-quem-a').textContent=email;$L('#lg-quem-b').textContent=email;
-    loginPasso(d.senhaDefinida?'p2b':'p2a');
+    /* modo do card de senha: primeiro acesso, troca obrigatória (admin exigiu) ou senha normal */
+    MODO_SENHA=!d.senhaDefinida?'novo':(d.trocarSenha?'troca':null);
+    prepararCardSenha();
+    loginPasso(MODO_SENHA?'p2a':'p2b');
   }catch(e){loginErro('Não consegui verificar o e-mail agora. Tente de novo.');console.warn(e)}
   finally{loginBusy(false)}
+}
+/* o card p2a serve para primeiro acesso E para troca exigida pelo admin */
+let MODO_SENHA=null;
+function prepararCardSenha(){
+  const troca=MODO_SENHA==='troca';
+  const t=$L('#lg-t2a'), fa=$L('#lg-fld-atual'), esq=$L('#lg-esqueci');
+  if(t)t.textContent=troca?'Troca de senha · defina uma nova':'Primeiro acesso · defina sua senha';
+  if(fa)fa.style.display=troca?'':'none';
+  if(esq)esq.style.display=troca?'block':'none';
+  ['#lg-s0','#lg-s1','#lg-s2'].forEach(s=>{const i=$L(s);if(i)i.value=''});
 }
 async function passoDefinirSenha(){
   const s1=$L('#lg-s1').value,s2=$L('#lg-s2').value;
@@ -1593,6 +1612,22 @@ async function passoDefinirSenha(){
   try{
     if(DEMO){entrarSessao(window.__demoConta);return}
     const email=window.__acesso.email;
+    if(MODO_SENHA==='troca'){                        /* admin exigiu nova senha */
+      const atual=$L('#lg-s0').value;
+      if(!atual)return loginErro('Digite a senha atual (ou use o link abaixo para receber um e-mail).');
+      if(atual===s1)return loginErro('A nova senha precisa ser diferente da atual.');
+      TROCANDO=true;                                 /* segura o onAuthStateChanged até trocar */
+      try{
+        try{await AUTH.signInWithEmailAndPassword(email,atual)}
+        catch(_){return loginErro('Senha atual incorreta. Use o link abaixo se não lembra dela.')}
+        await AUTH.currentUser.updatePassword(s1);
+        try{await DB.collection('acessos').doc(email).update({senhaDefinida:true,trocarSenha:false})}catch(_){/* regras */}
+        const a=window.__acesso;
+        TROCANDO=false;
+        entrarSessao({email,perfil:a.perfil,vinculo:a.vinculo});
+      }finally{TROCANDO=false}
+      return;
+    }
     try{
       await AUTH.createUserWithEmailAndPassword(email,s1);
     }catch(e){
@@ -1603,7 +1638,18 @@ async function passoDefinirSenha(){
     }
     try{await DB.collection('acessos').doc(email).update({senhaDefinida:true})}catch(_){/* regras */}
     /* onAuthStateChanged assume daqui */
-  }catch(e){loginErro(e.code==='auth/weak-password'?'Senha fraca — use pelo menos 6 caracteres.':'Não consegui criar a senha. Tente de novo.');console.warn(e)}
+  }catch(e){loginErro(e.code==='auth/weak-password'?'Senha fraca — use pelo menos 6 caracteres.':'Não consegui salvar a senha. Tente de novo.');console.warn(e)}
+  finally{loginBusy(false)}
+}
+async function passoEsqueciSenha(){
+  const email=window.__acesso?.email;if(!email)return;
+  loginBusy(true);
+  try{
+    await AUTH.sendPasswordResetEmail(email);
+    loginErro('');
+    const e=document.querySelector('#lg-p2a .err');
+    if(e){e.style.color='var(--good,#1b7f5a)';e.textContent='Link enviado para '+email+' — abra o e-mail para criar a nova senha.'}
+  }catch(e){loginErro('Não consegui enviar o e-mail agora. Fale com o administrador.');console.warn(e)}
   finally{loginBusy(false)}
 }
 async function passoSenha(){
@@ -1646,7 +1692,11 @@ function aplicarVisao(){
     bar.querySelector('#verComoSair').onclick=()=>{VISAO=null;aplicarVisao()};
   }else if(bar)bar.remove();
 }
+let TROCANDO=false, ENTROU=false;
 async function entrarSessao(conta){
+  if(ENTROU)return;            /* o onAuthStateChanged pode disparar mais de uma vez
+                                  por entrada (renovação de token) — 1 sessão, 1 log */
+  ENTROU=true;
   SESSAO={email:conta.email,perfil:conta.perfil,vinculo:conta.vinculo||null};
   /* log de acesso: 1 registro por entrada (login ou retorno com sessão salva).
      Fire-and-forget — se falhar, não atrapalha o uso. Só o admin lê (regras). */
@@ -1690,12 +1740,14 @@ async function abrirGear(){
       <td>${d.senhaDefinida?'sim':'<span style="color:var(--muted)">aguardando 1º acesso</span>'}</td>
       <td class="r" style="white-space:nowrap"><button class="icon-btn gr-ver" title="Ver o BI como esta conta vê">👁 Ver como</button>${eu?' <span class="subtle">você</span>':`
         <button class="icon-btn gr-sv" style="display:none;background:var(--gold);color:#fff;border-color:var(--gold)">Salvar</button>
-        <button class="icon-btn gr-tg">${d.ativo!==false?'Desativar':'Reativar'}</button>`}</td></tr>`}).join('');
+        ${d.senhaDefinida?`<button class="icon-btn gr-rs" title="A pessoa terá que definir uma nova senha no próximo acesso">🔑 Exigir nova senha</button>`:''}
+        <button class="icon-btn gr-tg">${d.ativo!==false?'Desativar':'Reativar'}</button>
+        ${d.ativo===false?'<button class="icon-btn gr-del" style="color:var(--bad);border-color:var(--bad)" title="Remover este e-mail da lista">Excluir</button>':''}`}</td></tr>`}).join('');
     const gers=(window.LISTAS_VINCULO?.gerentes||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     const emps=(window.LISTAS_VINCULO?.stands||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     md.innerHTML=`
       <div class="mh"><h2>⚙ Acessos — quem pode entrar</h2><button class="icon-btn" id="glog" style="margin-left:auto;margin-right:10px">📜 Log de acessos</button><button class="x" id="mx">✕</button></div>
-      <div class="empty" style="text-align:left;padding:4px 0 12px">Só entra quem estiver liberado aqui. Para trocar o perfil ou o vínculo de alguém, mude na própria linha e clique em <b>Salvar</b> (vale a partir do próximo login da pessoa). <b>👁 Ver como</b> mostra o BI exatamente como aquela conta vê. Desativar corta o acesso na hora. Senhas são geridas pelo Firebase — para redefinir, console → Authentication → usuário → Reset password.</div>
+      <div class="empty" style="text-align:left;padding:4px 0 12px">Só entra quem estiver liberado aqui. Para trocar o <b>perfil</b> ou o <b>vínculo</b>, mude na própria linha e clique em <b>Salvar</b> (vale no próximo login da pessoa). <b>👁 Ver como</b> mostra o BI exatamente como aquela conta vê. <b>🔑 Exigir nova senha</b> obriga a pessoa a definir outra senha no próximo acesso. <b>Desativar</b> corta na hora; depois de desativado aparece <b>Excluir</b>, que remove o e-mail da lista.</div>
       ${aviso?`<div class="empty" style="text-align:left;color:var(--warn);padding:0 0 10px">${aviso}</div>`:''}
       <div class="vtable-wrap"><table class="tbl"><thead><tr><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th>Status</th><th>Senha</th><th></th></tr></thead>
       <tbody>${linhas||'<tr><td colspan="6" class="empty">ninguém liberado ainda</td></tr>'}</tbody></table></div>
@@ -1742,6 +1794,23 @@ async function abrirGear(){
       if(bTg)bTg.onclick=async()=>{
         if(DEMO)return abrirGear();
         await DB.collection('acessos').doc(d.email).update({ativo:d.ativo===false});
+        abrirGear();
+      };
+      const bRs=tr.querySelector('.gr-rs'), bDel=tr.querySelector('.gr-del');
+      if(bRs)bRs.onclick=async()=>{
+        const err=md.querySelector('#ng-erro');err.textContent='';
+        if(bRs.dataset.ok!=='1'){bRs.dataset.ok='1';bRs.textContent='confirmar? clique de novo';
+          err.textContent='No próximo acesso, '+d.email+' terá que definir uma nova senha (informando a atual, ou pedindo link por e-mail).';return}
+        if(DEMO)return abrirGear();
+        await DB.collection('acessos').doc(d.email).update({trocarSenha:true});
+        abrirGear();
+      };
+      if(bDel)bDel.onclick=async()=>{
+        const err=md.querySelector('#ng-erro');err.textContent='';
+        if(bDel.dataset.ok!=='1'){bDel.dataset.ok='1';bDel.textContent='confirmar exclusão?';
+          err.textContent='Excluir remove '+d.email+' da lista de liberados (não tem como desfazer — só cadastrar de novo). A senha dela continua guardada no Firebase Auth: se voltar a ser liberada, entra com a mesma senha.';return}
+        if(DEMO)return abrirGear();
+        await DB.collection('acessos').doc(d.email).delete();
         abrirGear();
       };
       if(bVer)bVer.onclick=()=>{
@@ -1821,6 +1890,7 @@ document.body.classList.add('locked');
   $L('#lg-bt2a').onclick=passoDefinirSenha;
   $L('#lg-s2').addEventListener('keydown',e=>{if(e.key==='Enter')passoDefinirSenha()});
   $L('#lg-bt2b').onclick=passoSenha;
+  $L('#lg-esqueci').onclick=passoEsqueciSenha;
   $L('#lg-senha').addEventListener('keydown',e=>{if(e.key==='Enter')passoSenha()});
   document.querySelectorAll('.lg-voltar').forEach(b=>b.onclick=()=>loginPasso('p1'));
   /* olho de revelar a senha — SVGs idênticos aos do BI de Inteligência */
@@ -1857,7 +1927,7 @@ document.body.classList.add('locked');
   firebase.initializeApp(FB_CONFIG);
   AUTH=firebase.auth();DB=firebase.firestore();
   AUTH.onAuthStateChanged(async user=>{
-    if(!user)return;
+    if(!user||TROCANDO||ENTROU)return;
     const email=emailNorm(user.email);
     try{
       const doc=await DB.collection('acessos').doc(email).get();
@@ -1865,6 +1935,14 @@ document.body.classList.add('locked');
       if(!d||d.ativo===false){
         await AUTH.signOut();
         loginPasso('p1');loginErro(d?'Este acesso foi desativado.':'E-mail não liberado.');
+        return;
+      }
+      if(d.trocarSenha){    /* admin exigiu troca: nem com sessão salva entra sem trocar */
+        await AUTH.signOut();
+        window.__acesso={email,...d};
+        $L('#lg-quem-a').textContent=email;
+        MODO_SENHA='troca';prepararCardSenha();loginPasso('p2a');
+        loginErro('O administrador pediu a troca da sua senha.');
         return;
       }
       if(!d.senhaDefinida){try{await DB.collection('acessos').doc(email).update({senhaDefinida:true})}catch(_){}}
