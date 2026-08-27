@@ -1648,6 +1648,9 @@ function aplicarVisao(){
 }
 async function entrarSessao(conta){
   SESSAO={email:conta.email,perfil:conta.perfil,vinculo:conta.vinculo||null};
+  /* log de acesso: 1 registro por entrada (login ou retorno com sessão salva).
+     Fire-and-forget — se falhar, não atrapalha o uso. Só o admin lê (regras). */
+  if(!DEMO&&DB){try{DB.collection('log_acessos').add({email:SESSAO.email,perfil:SESSAO.perfil,quando:new Date().toISOString()}).catch(()=>{})}catch(_){}}
   window.ESCOPO=mkEscopo(SESSAO);window.TAB_VISIVEL=k=>k!=='dados'||SESSAO.perfil==='admin';
   await carregarDados();
   $L('#loginOverlay').style.display='none';
@@ -1691,7 +1694,7 @@ async function abrirGear(){
     const gers=(window.LISTAS_VINCULO?.gerentes||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     const emps=(window.LISTAS_VINCULO?.stands||[]).map(g=>`<option>${eL(g)}</option>`).join('');
     md.innerHTML=`
-      <div class="mh"><h2>⚙ Acessos — quem pode entrar</h2><button class="x" id="mx">✕</button></div>
+      <div class="mh"><h2>⚙ Acessos — quem pode entrar</h2><button class="icon-btn" id="glog" style="margin-left:auto;margin-right:10px">📜 Log de acessos</button><button class="x" id="mx">✕</button></div>
       <div class="empty" style="text-align:left;padding:4px 0 12px">Só entra quem estiver liberado aqui. Para trocar o perfil ou o vínculo de alguém, mude na própria linha e clique em <b>Salvar</b> (vale a partir do próximo login da pessoa). <b>👁 Ver como</b> mostra o BI exatamente como aquela conta vê. Desativar corta o acesso na hora. Senhas são geridas pelo Firebase — para redefinir, console → Authentication → usuário → Reset password.</div>
       ${aviso?`<div class="empty" style="text-align:left;color:var(--warn);padding:0 0 10px">${aviso}</div>`:''}
       <div class="vtable-wrap"><table class="tbl"><thead><tr><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th>Status</th><th>Senha</th><th></th></tr></thead>
@@ -1706,6 +1709,7 @@ async function abrirGear(){
       </div>
       <div id="ng-erro" style="color:var(--bad);font-size:12.5px;min-height:18px"></div>`;
     md.querySelector('#mx').onclick=()=>{mb.classList.remove('open');document.body.style.overflow=''};
+    md.querySelector('#glog').onclick=abrirLog;
     const selP=md.querySelector('#ng-perfil');
     const mostraVinc=()=>{const p=PERFIS[selP.value];
       md.querySelector('#ng-vinc-g').style.display=p?.vinculo==='gerente'?'':'none';
@@ -1766,6 +1770,47 @@ async function abrirGear(){
     const q=await DB.collection('acessos').get();
     pinta(q.docs.map(d=>d.data()).sort((a,b)=>a.email<b.email?-1:1));
   }catch(e){pinta([], 'Não consegui ler a lista (verifique as regras do Firestore).');console.warn(e)}
+}
+
+/* ---------- log de acessos (só admin; regras do Firestore garantem no servidor) ---------- */
+async function abrirLog(){
+  const mb=document.getElementById('mback'),md=document.getElementById('modal');
+  const fmtQ=iso=>{const d=new Date(iso);
+    return d.toLocaleDateString('pt-BR')+' <span style="color:var(--muted)">·</span> <b class="num">'+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</b>'};
+  const pinta=(regs,aviso)=>{
+    const desenha=filtro=>{
+      const f=(filtro||'').trim().toLowerCase();
+      const vis=f?regs.filter(r=>r.email.toLowerCase().includes(f)):regs;
+      md.querySelector('#lg-corpo').innerHTML=vis.length?vis.map(r=>`
+        <tr><td style="white-space:nowrap">${fmtQ(r.quando)}</td>
+        <td><b>${eL(r.email)}</b></td>
+        <td>${PERFIS[r.perfil]?.lb||eL(r.perfil||'—')}</td></tr>`).join('')
+        :'<tr><td colspan="3" class="empty">nenhum acesso'+(f?' para este filtro':' registrado ainda')+'</td></tr>';
+      md.querySelector('#lg-tot').textContent=vis.length+(regs.length>=300?' (mostrando os últimos 300)':'');
+    };
+    md.innerHTML=`
+      <div class="mh"><h2>📜 Log de acessos</h2><button class="icon-btn" id="lgv" style="margin-left:auto;margin-right:10px">← Acessos</button><button class="x" id="mx">✕</button></div>
+      <div class="empty" style="text-align:left;padding:4px 0 10px">Cada entrada no BI gera um registro (login com senha ou retorno com sessão salva no navegador). Visível somente para administradores.</div>
+      ${aviso?`<div class="empty" style="text-align:left;color:var(--warn);padding:0 0 10px">${aviso}</div>`:''}
+      <div class="searchbar" style="margin-bottom:10px"><input id="lg-f" type="search" placeholder="filtrar por e-mail…" style="min-width:240px"><span class="subtle">registros: <b class="num" id="lg-tot"></b></span></div>
+      <div class="vtable-wrap"><table class="tbl"><thead><tr><th>Quando</th><th>E-mail</th><th>Perfil</th></tr></thead>
+      <tbody id="lg-corpo"></tbody></table></div>`;
+    md.querySelector('#mx').onclick=()=>{mb.classList.remove('open');document.body.style.overflow=''};
+    md.querySelector('#lgv').onclick=abrirGear;
+    md.querySelector('#lg-f').oninput=e=>desenha(e.target.value);
+    desenha('');
+  };
+  mb.classList.add('open');document.body.style.overflow='hidden';
+  if(DEMO){
+    const agora=Date.now(), amostra=[];
+    const quem=[['jorge.lima@planik.com.br','admin'],['david@planik.com.br','admin'],['teste@planik.com.br','diretor_parcerias'],['gerente@demo','gerente']];
+    for(let i=0;i<9;i++){const [e,p]=quem[i%quem.length];amostra.push({email:e,perfil:p,quando:new Date(agora-i*47*60000).toISOString()})}
+    pinta(amostra,'MODO DEMO — amostra ilustrativa; na versão publicada vem do Firestore.');return;
+  }
+  try{
+    const q=await DB.collection('log_acessos').orderBy('quando','desc').limit(300).get();
+    pinta(q.docs.map(d=>d.data()));
+  }catch(e){pinta([],'Não consegui ler o log (as regras do Firestore já foram atualizadas?).');console.warn(e)}
 }
 
 /* ---------- inicialização ---------- */

@@ -5,8 +5,10 @@
 // - Qualquer pessoa consegue CONSULTAR um e-mail específico (necessário para a
 //   tela de login dizer "primeiro acesso" ou "não liberado") — mas NÃO consegue
 //   listar todos os e-mails cadastrados.
-// - Só o admin (perfil 'admin' e ativo) lista, cria e desativa acessos.
+// - Só o admin (perfil 'admin' e ativo) lista, cria, edita e desativa acessos.
 // - Cada pessoa só consegue marcar o próprio "senhaDefinida" — nada mais.
+// - log_acessos: cada pessoa logada só grava o PRÓPRIO acesso (email, perfil,
+//   quando); só o admin lê o log; ninguém edita nem apaga registros.
 
 rules_version = '2';
 service cloud.firestore {
@@ -29,6 +31,14 @@ service cloud.firestore {
         || (request.auth != null
             && request.auth.token.email == email
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['senhaDefinida']));
+    }
+
+    match /log_acessos/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.keys().hasOnly(['email','perfil','quando']);
+      allow read: if souAdmin();       // só admin consulta o log
+      allow update, delete: if false;  // registro não se edita nem se apaga
     }
 
     match /{tudo=**} { allow read, write: if false; }  // resto: negado
