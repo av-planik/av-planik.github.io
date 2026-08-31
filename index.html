@@ -21,7 +21,7 @@
   --ink:#17181a; --ink2:#4b4c50; --muted:#7c7d81;
   --border:#e4e2dc; --grid:#edebe5; --track:#f0eee8;
   --gold:#B08A2E; --gold-ink:#8a6b20;
-  --s1:#2a78d6; --s2:#B08A2E; --s3:#B0397A; --s4:#1baf7a; --s5:#4a3aa7; --s0:#9a9992;
+  --s1:#2a78d6; --s2:#B08A2E; --s3:#B0397A; --s4:#1baf7a; --s5:#4a3aa7; --s6:#aa83c2; --s0:#9a9992;
   --good:#1a7a4e; --warn:#B4651A; --bad:#C0392B;
   --good-bg:#e9f3ee; --warn-bg:#fbf0e4; --bad-bg:#fbecea;
   --shadow:0 1px 2px rgba(25,22,12,.05),0 10px 28px rgba(25,22,12,.07);
@@ -34,7 +34,7 @@
     --ink:#f2f1ee; --ink2:#c4c3bd; --muted:#8e8f93;
     --border:#2a2b30; --grid:#24252a; --track:#22232a;
     --gold:#C9A24A; --gold-ink:#C9A24A;
-    --s1:#3987e5; --s2:#B08526; --s3:#BE4A84; --s4:#1baf7a; --s5:#9085e9; --s0:#7b7b76;
+    --s1:#3987e5; --s2:#B08526; --s3:#BE4A84; --s4:#1baf7a; --s5:#9085e9; --s6:#794db6; --s0:#7b7b76;
     --good:#2f9e6a; --warn:#D07C2A; --bad:#E05C4E;
     --good-bg:#152a20; --warn-bg:#2a2013; --bad-bg:#2b1917;
     --shadow:0 1px 2px rgba(0,0,0,.35),0 10px 28px rgba(0,0,0,.4);
@@ -45,7 +45,7 @@
   --ink:#f2f1ee; --ink2:#c4c3bd; --muted:#8e8f93;
   --border:#2a2b30; --grid:#24252a; --track:#22232a;
   --gold:#C9A24A; --gold-ink:#C9A24A;
-  --s1:#3987e5; --s2:#B08526; --s3:#BE4A84; --s4:#1baf7a; --s5:#9085e9; --s0:#7b7b76;
+  --s1:#3987e5; --s2:#B08526; --s3:#BE4A84; --s4:#1baf7a; --s5:#9085e9; --s6:#794db6; --s0:#7b7b76;
   --good:#2f9e6a; --warn:#D07C2A; --bad:#E05C4E;
   --good-bg:#152a20; --warn-bg:#2a2013; --bad-bg:#2b1917;
   --shadow:0 1px 2px rgba(0,0,0,.35),0 10px 28px rgba(0,0,0,.4);
@@ -608,6 +608,20 @@ body.locked .app-conteudo{filter:blur(7px);pointer-events:none;user-select:none}
 ### NIK VILA MARIANA
 20/08/2026|DORIVAL|Theo|VEZ|PLANIK VENDAS|VEZ||24|Quer fazer curta temporada, direcionado ao Frei Caneca
 22/08/2026|DESIDERÁ|Naira|INDICAÇÃO|PLANIK VENDAS|ONLINE|||Nafa imedito,muito frio
+
+### TAJ IBIRAPUERA
+27/07/2026|DORIVAL|MARCIA|VEZ|PLANIK VENDAS|VEZ|studio|193|CLIENTE PROCURA STUDIO, VAI DIRECIONAR
+29/07/2026|DORIVAL|CRUZ|VEZ|PLANIK VENDAS|VEZ||193|ENVIOU MATERIAL, CLIENTE VAI ANALISAR
+02/08/2026|DORIVAL|RICCO|INDICAÇÃO|PLANIK VENDAS|OFERTA ATIVA||193|MAIS CURIOSIDADE, SEM PERFIL
+05/08/2026|DESIDERÁ|SONIA|VEZ|PLANIK VENDAS|VEZ||193|ENVIOU MATERIAL, FICOU DE ANALISAR E MARCAR DE IR CONVERSAR SOBRE VALORES.
+09/08/2026|DORIVAL|MARCIA|VEZ|PLANIK VENDAS|VEZ||193|Valores fora, direcionado ao Core
+16/08/2026|THAIS|NETUNO|VEZ|PLANIK VENDAS|VEZ|||Ficou de voltar com a esposa terça feira 18/08/26
+25/08/2026|DORIVAL|THEO|VEZ|PLANIK VENDAS|VEZ|||Ficou de levar a esposo para conhecer
+25/08/2026|OUTRO|SMITH|INDICAÇÃO|PLANIK PARCERIAS|CARTEIRA|||Negociação somente mes que vem
+27/08/2026|OUTRO|LORRANE|RETORNO|PLANIK PARCERIAS|CARTEIRA|||Pediu para pensar em duas semanas para negociar
+28/08/2026|PEDRO|RAUL|INDICAÇÃO|PLANIK PARCERIAS|CARTEIRA|||Está vendo muitos projetos, vai analisar projeto e valores
+
+### NUV MOEMA
 </script>
 <script>
 function iniciarBI(){
@@ -625,7 +639,8 @@ const EMP_META={
  'LINN VILA MARIANA':{cor:'var(--s2)',curta:'Linn V. Mariana'},
  'CORE KLABIN'      :{cor:'var(--s3)',curta:'Core Klabin'},
  'NIK VILA MARIANA' :{cor:'var(--s4)',curta:'Nik V. Mariana'},
- 'TAJ IBIRAPUERA'   :{cor:'var(--s5)',curta:'Taj Ibirapuera'}
+ 'TAJ IBIRAPUERA'   :{cor:'var(--s5)',curta:'Taj Ibirapuera'},
+ 'NUV MOEMA'        :{cor:'var(--s6)',curta:'Nuv Moema'}
 };
 const TIPO_META={
  'INDICAÇÃO':{cor:'var(--s1)'},'VEZ':{cor:'var(--s2)'},
@@ -1107,7 +1122,7 @@ function renderDados(){
       <table class="tbl">
         <tr><td><b>Base 01</b> · FREI CANECA — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">aba NIK FREI CANECA</td></tr>
         <tr><td><b>Base 02</b> · CORE + LINN + NIK VILA MARIANA — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">3 abas</td></tr>
-        <tr><td><b>Base 03</b> · TAJ IBIRAPUERA</td><td class="r" style="color:var(--warn)">pendente — link ainda não recebido</td></tr>
+        <tr><td><b>Base 03</b> · TAJ + NUV — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">abas TAJ IBIRAPUERA e NUV MOEMA</td></tr>
       </table>
       <div class="empty" style="text-align:left;padding-top:12px">Esta versão usa uma fotografia dos dados lida em <b>26/08/2026</b> (${fmt(ALL.length)} visitas, ${brY(MIN_D)} a ${brY(MAX_D)}). A conexão ao vivo com o Sheets (botão "Atualizar") entra na versão publicada — passo a passo no documento do projeto.</div>
     </div>
@@ -1494,8 +1509,10 @@ const SHEETS=[
  {emp:'NIK FREI CANECA',  id:'1TeDfS7-Miy9DQ_cJlGboUeQ9kvJ3fR3foP9x-i-ibeY', gid:'1497231963'},
  {emp:'CORE KLABIN',      id:'1p0VeeGhI7qy09yLeDBShJgLmOlSLkk4xrvjP5engdko', gid:'425052061'},
  {emp:'LINN VILA MARIANA',id:'1p0VeeGhI7qy09yLeDBShJgLmOlSLkk4xrvjP5engdko', gid:'80604004'},
- {emp:'NIK VILA MARIANA', id:'1p0VeeGhI7qy09yLeDBShJgLmOlSLkk4xrvjP5engdko', gid:'1086726176'}
- /* TAJ IBIRAPUERA: acrescentar {emp,id,gid} quando a base chegar */
+ {emp:'NIK VILA MARIANA', id:'1p0VeeGhI7qy09yLeDBShJgLmOlSLkk4xrvjP5engdko', gid:'1086726176'},
+ /* base "TAJ + NUV PLANIK Visitação Semanal 2026" (recebida em 31/08) */
+ {emp:'TAJ IBIRAPUERA',  id:'1BZu32LLVIyAAalbWSVeUmpAGEwsIND28YupUiB2bLNw', gid:'104499573'},
+ {emp:'NUV MOEMA',       id:'1BZu32LLVIyAAalbWSVeUmpAGEwsIND28YupUiB2bLNw', gid:'276272310'}
 ];
 
 const PERFIS={
