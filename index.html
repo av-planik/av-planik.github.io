@@ -334,7 +334,7 @@ body.locked .app-conteudo{filter:blur(7px);pointer-events:none;user-select:none}
                autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       <button type="button" id="lg-bt1" class="btn">Continuar</button>
       <div class="err"></div>
-      <div id="lg-demo">MODO DEMO (arquivo local) — entre com admin@demo, house@demo, parcerias@demo,<br>super@demo, gerente@demo, stand@demo ou novo@demo · qualquer senha</div>
+      <div id="lg-demo">MODO DEMO (arquivo local) — entre com admin@demo, leitura@demo, house@demo,<br>parcerias@demo, super@demo, gerente@demo, stand@demo ou novo@demo · qualquer senha</div>
     </form>
   </div>
 
@@ -1517,6 +1517,7 @@ const SHEETS=[
 
 const PERFIS={
  admin:            {lb:'Administrador',     escopo:null},
+ leitura:          {lb:'Leitura',           escopo:null},   /* vê tudo, sem engrenagem */
  diretor_house:    {lb:'Diretor House',     escopo:r=>r.ev==='PLANIK VENDAS'},
  diretor_parcerias:{lb:'Diretor Parcerias', escopo:r=>r.ev==='PLANIK PARCERIAS'},
  superintendente:  {lb:'Superintendente',   escopo:r=>r.ev==='PLANIK VENDAS'},
@@ -1526,7 +1527,7 @@ const PERFIS={
 
 const DEMO=location.protocol==='file:';
 const DEMO_CONTAS={
- 'admin@demo':{perfil:'admin'}, 'house@demo':{perfil:'diretor_house'},
+ 'admin@demo':{perfil:'admin'}, 'leitura@demo':{perfil:'leitura'}, 'house@demo':{perfil:'diretor_house'},
  'parcerias@demo':{perfil:'diretor_parcerias'}, 'super@demo':{perfil:'superintendente'},
  'gerente@demo':{perfil:'gerente',vinculo:'DORIVAL'},
  'stand@demo':{perfil:'coord_stand',vinculo:'CORE KLABIN'},

@@ -19,7 +19,8 @@ lugar que sirva HTML estático (GitHub Pages).
 
 | Perfil | Visão |
 |---|---|
-| Administrador | tudo + engrenagem de acessos |
+| Administrador | tudo + engrenagem de acessos + aba Dados |
+| Leitura | todos os stands e canais, sem engrenagem e sem aba Dados |
 | Diretor House | só canal PLANIK VENDAS |
 | Diretor Parcerias | só canal PLANIK PARCERIAS |
 | Superintendente | só canal PLANIK VENDAS |
