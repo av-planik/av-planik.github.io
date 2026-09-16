@@ -664,7 +664,12 @@ function parseData(){
     const l=ln.trim();if(!l)continue;
     if(l.startsWith('### ')){emp=l.slice(4).trim();continue}
     const p=l.split('|');if(p.length<6||!emp)continue;
-    const [dt,ger,cor,tipo,ev,orig,unid,mtg,...ob]=p;
+    /* formato atual: DATA|GERENTE|CORRETOR|TIPO|EV|ORIGEM|UNIDADE|METRAGEM|FAC|OBS
+       (a fotografia embutida antiga tem 9 campos, sem FAC — segue lida igual) */
+    const temFac=p.length>=10;
+    const [dt,ger,cor,tipo,ev,orig,unid,mtg]=p;
+    const fac=temFac?(p[8]||'').trim():'';
+    const ob=p.slice(temFac?9:8);
     const [d,m,y]=dt.split('/').map(Number);if(!y)continue;
     /* GUARDA DE DATA (16/09/2026): um "16/09/0206" digitado na planilha fazia o
        período da base ir do ano 206 até 2026 — 1.820 anos, ~665 mil colunas
@@ -685,7 +690,7 @@ function parseData(){
       tipo:(tipo||'').trim().toUpperCase()||'—',
       ev:(ev||'').trim().toUpperCase()||'—',
       origem:(orig||'').trim().toUpperCase()||'NÃO INFORMADA',
-      unid:(unid||'').trim(), mtg:(mtg||'').trim(),
+      unid:(unid||'').trim(), mtg:(mtg||'').trim(), fac,
       obs:ob.join('|').trim()
     });
   }
@@ -833,18 +838,19 @@ function abrirPainel(titulo,builder,cor){
 
 function tabelaVisitas(rows,busca){
   const q=(busca||'').trim().toLowerCase();
-  const fil=q?rows.filter(r=>[r.emp,r.ger,r.corD,r.tipo,r.ev,r.origem,r.obs,r.unid,r.dt].join(' ').toLowerCase().includes(q)):rows;
+  const fil=q?rows.filter(r=>[r.emp,r.ger,r.corD,r.tipo,r.ev,r.origem,r.obs,r.unid,r.dt,r.fac].join(' ').toLowerCase().includes(q)):rows;
   const linhas=fil.slice().sort((a,b)=>b.date-a.date).map(r=>`<tr>
     <td class="n" style="white-space:nowrap">${r.dt}<div style="color:var(--muted);font-size:11px">${WD[(r.date.getDay()+6)%7]}</div></td>
     <td><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${EMP_META[r.emp]?.cor||'var(--s0)'};margin-right:6px"></span>${esc(EMP_META[r.emp]?.curta||r.emp)}</td>
     <td><b>${esc(r.ger)}</b></td><td>${esc(r.corD)}</td>
     <td><span class="pill" style="color:${TIPO_META[r.tipo]?.cor||'var(--muted)'};background:var(--track)">${esc(r.tipo)}</span></td>
     <td>${esc(r.ev)}</td><td>${esc(r.origem)}</td>
+    <td class="n">${r.fac?`<b>${esc(r.fac)}</b>`:'<span style="color:var(--bad)" title="sem FAC / id — não dá para achar no SIGAVI">–</span>'}</td>
     <td class="n">${esc(r.unid)||'–'}</td><td class="n">${esc(r.mtg)||'–'}</td>
     <td class="obs">${esc(r.obs)||'–'}</td></tr>`).join('');
   return {n:fil.length,html:`<div class="vtable-wrap"><table class="tbl"><thead><tr>
-    <th>Data</th><th>Empreendimento</th><th>Gerente</th><th>Corretor</th><th>Tipo</th><th>Canal</th><th>Origem</th><th>Unid.</th><th>m²</th><th>Observação</th>
-    </tr></thead><tbody>${linhas||`<tr><td colspan="10" class="empty">Nada encontrado.</td></tr>`}</tbody></table></div>`};
+    <th>Data</th><th>Empreendimento</th><th>Gerente</th><th>Corretor</th><th>Tipo</th><th>Canal</th><th>Origem</th><th class="r">FAC / id</th><th>Unid.</th><th>m²</th><th>Observação</th>
+    </tr></thead><tbody>${linhas||`<tr><td colspan="11" class="empty">Nada encontrado.</td></tr>`}</tbody></table></div>`};
 }
 function abrirLista(titulo,rows,cor){
   state.modalBusca='';
@@ -1119,7 +1125,7 @@ function renderVisitas(){
   $('#p-visitas').innerHTML=`<div class="grid"><div class="card c12">
     <div class="hd"><h3>Todas as visitas do recorte</h3><span class="hint num">${fmt(n)} de ${fmt(rows.length)} exibidas</span>
       <span class="sp count-chips">${tipos.map(([k,v])=>`<span class="chip"><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${TIPO_META[k]?.cor||'var(--s0)'};margin-right:5px"></span>${esc(k)}: <b class="num">${fmt(v)}</b></span>`).join('')}</span></div>
-    <div class="searchbar"><input id="busca" type="search" placeholder="Buscar gerente, corretor, origem, observação…" value="${esc(state.busca)}"></div>
+    <div class="searchbar"><input id="busca" type="search" placeholder="Buscar FAC / id, gerente, corretor, origem, observação…" value="${esc(state.busca)}"></div>
     <div id="vtab">${html}</div>
   </div></div>`;
   const inp=$('#busca');
@@ -1159,6 +1165,35 @@ function gruposGrafia(rows,campoChave,campoMostra){
     .map(g=>[...g.values()].sort((a,b)=>b.n-a.n).map(v=>[v.mostra,v.n]));
 }
 
+/* tabela de cobrança: quem tem campo em branco, por pessoa (gerente ou corretor) */
+function tabelaCobranca(campoChave,campoMostra,rotulo){
+  const m=new Map();
+  for(const r of ALL){
+    const k=r[campoChave];if(!k||k.startsWith('('))continue;
+    if(!m.has(k))m.set(k,{nome:r[campoMostra]||k,rows:[]});
+    m.get(k).rows.push(r);
+  }
+  const linhas=[...m.values()].map(g=>({
+    nome:g.nome, n:g.rows.length,
+    fac:g.rows.filter(r=>!r.fac), obs:g.rows.filter(r=>!r.obs),
+    ori:g.rows.filter(r=>r.origem==='NÃO INFORMADA')
+  })).filter(l=>l.fac.length||l.obs.length||l.ori.length)
+     .sort((a,b)=>b.fac.length-a.fac.length||b.n-a.n).slice(0,12);
+  if(!linhas.length)return '<div class="empty">Nada a cobrar aqui.</div>';
+  const cl=(arr,tot,tit)=>arr.length
+    ? `<td class="r num" ${clk(tit,arr,'var(--warn)')} style="cursor:pointer;color:var(--warn)"><b>${fmt(arr.length)}</b> <span class="subtle">${pct(arr.length,tot)}</span></td>`
+    : `<td class="r num" style="color:var(--muted)">—</td>`;
+  return `<div class="vtable-wrap"><table class="tbl">
+    <thead><tr><th>${rotulo}</th><th class="r">Visitas</th><th class="r">Sem FAC / id</th><th class="r">Sem origem</th><th class="r">Sem observação</th></tr></thead>
+    <tbody>${linhas.map(l=>`<tr>
+      <td><b>${esc(l.nome)}</b></td>
+      <td class="r num">${fmt(l.n)}</td>
+      ${cl(l.fac,l.n,'Sem FAC / id · '+l.nome)}
+      ${cl(l.ori,l.n,'Sem origem · '+l.nome)}
+      ${cl(l.obs,l.n,'Sem observação · '+l.nome)}
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
 function renderDados(){
   const HOJE=new Date();HOJE.setHours(23,59,59,999);
   const N=ALL.length;
@@ -1175,6 +1210,7 @@ function renderDados(){
   const semEv     = ALL.filter(r=>r.ev==='—');
   const semOrig   = ALL.filter(r=>r.origem==='NÃO INFORMADA');
   const semObs    = ALL.filter(r=>!r.obs);
+  const semFac    = ALL.filter(r=>!r.fac);
   const grafGer   = gruposGrafia(ALL,'ger','ger');
   const grafCor   = gruposGrafia(ALL,'cor','corD');
   const origRaras = conta(ALL,'origem').filter(([o,v])=>v===1&&o!=='NÃO INFORMADA');
@@ -1186,6 +1222,9 @@ function renderDados(){
   if(futuras.length)itens.push({tag:'Data no futuro',cor:'var(--bad)',bg:'var(--bad-bg)',rows:futuras,
     titulo:'Visitas com data no futuro',
     txt:`<b class="num">${fmt(futuras.length)}</b> visita(s) com data depois de hoje (${futuras.slice(0,3).map(r=>esc(r.dt)+' · '+esc(r.emp)).join('; ')}${futuras.length>3?'…':''}) — quase sempre mês ou ano digitado errado.`});
+  if(semFac.length)itens.push({tag:'Sem FAC / id',cor:'var(--bad)',bg:'var(--bad-bg)',rows:semFac,
+    titulo:'Visitas sem FAC / id do SIGAVI',
+    txt:`<b class="num">${fmt(semFac.length)}</b> visita(s) sem FAC / id (${pct(semFac.length,N)} da base) — sem esse número não se acha a visita no SIGAVI. Veja abaixo, por stand e por gerente, quem precisa preencher.`});
   if(dups)itens.push({tag:'Duplicatas',cor:'var(--warn)',bg:'var(--warn-bg)',rows:dupRows,
     titulo:'Possíveis lançamentos duplicados',
     txt:`<b class="num">${fmt(dups)}</b> lançamento(s) repetido(s) — mesmo dia, gerente, corretor, tipo e canal${dupDias?`; concentrados em ${dupDias}`:''}. Somam no total oficial; vale conferir no stand.`});
@@ -1221,6 +1260,7 @@ function renderDados(){
     const dias=ult?Math.round((new Date().setHours(0,0,0,0)-new Date(ult).setHours(0,0,0,0))/DAY):null;
     const falta=c=>rs.filter(c).length;
     return {e,n:rs.length,ult,dias,
+      f:falta(r=>!r.fac),
       g:falta(r=>r.ger==='(SEM GERENTE)'), c:falta(r=>r.cor==='(SEM CORRETOR)'),
       t:falta(r=>r.tipo==='—'), o:falta(r=>r.origem==='NÃO INFORMADA'), b:falta(r=>!r.obs)};
   }).sort((a,b)=>b.n-a.n);
@@ -1258,13 +1298,14 @@ function renderDados(){
       <div class="hd"><h3>Preenchimento por stand</h3><span class="hint">campos em branco, por empreendimento — clique no número para ver as visitas</span></div>
       <div class="vtable-wrap"><table class="tbl">
         <thead><tr><th>Empreendimento</th><th class="r">Visitas</th><th class="r">Último lançamento</th>
-          <th class="r">Sem gerente</th><th class="r">Sem corretor</th><th class="r">Sem tipo</th><th class="r">Sem origem</th><th class="r">Sem observação</th></tr></thead>
+          <th class="r">Sem FAC / id</th><th class="r">Sem gerente</th><th class="r">Sem corretor</th><th class="r">Sem tipo</th><th class="r">Sem origem</th><th class="r">Sem observação</th></tr></thead>
         <tbody>${linhasStand.map(s=>{
           const rs=ALL.filter(r=>r.emp===s.e);
           return `<tr>
             <td><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${EMP_META[s.e]?.cor||'var(--s0)'};margin-right:6px"></span>${esc(EMP_META[s.e]?.curta||s.e)}</td>
             <td class="r num"><b>${fmt(s.n)}</b></td>
             <td class="r num" style="color:var(--muted)">${s.ult?brY(s.ult)+' · '+(s.dias<=0?'hoje':s.dias===1?'ontem':'há '+s.dias+' dias'):'—'}</td>
+            ${cel(s.f,s.n,rs.filter(r=>!r.fac),'Sem FAC / id · '+s.e)}
             ${cel(s.g,s.n,rs.filter(r=>r.ger==='(SEM GERENTE)'),'Sem gerente · '+s.e)}
             ${cel(s.c,s.n,rs.filter(r=>r.cor==='(SEM CORRETOR)'),'Sem corretor · '+s.e)}
             ${cel(s.t,s.n,rs.filter(r=>r.tipo==='—'),'Sem tipo · '+s.e)}
@@ -1273,6 +1314,21 @@ function renderDados(){
           </tr>`}).join('')}</tbody>
       </table></div>
       <div class="empty" style="text-align:left;padding-top:10px">“Último lançamento” é a data mais recente que o stand registrou, contada até <b>hoje</b> — stand que parou de lançar aparece aqui antes de sumir dos gráficos.</div>
+    </div>
+
+    <div class="card c12">
+      <div class="hd"><h3>Quem cobrar</h3><span class="hint">gerentes e corretores com campos em branco — ordenado por nº de visitas sem FAC / id</span></div>
+      <div class="grid" style="gap:16px">
+        <div class="card c6" style="box-shadow:none;border:0;padding:0">
+          <div class="hd" style="padding-top:0"><h3 style="font-size:14px">Por gerente</h3></div>
+          ${tabelaCobranca('ger','ger','Gerente')}
+        </div>
+        <div class="card c6" style="box-shadow:none;border:0;padding:0">
+          <div class="hd" style="padding-top:0"><h3 style="font-size:14px">Por corretor</h3></div>
+          ${tabelaCobranca('cor','corD','Corretor')}
+        </div>
+      </div>
+      <div class="empty" style="text-align:left;padding-top:10px">O FAC / id é o número da visita no <b>SIGAVI</b>: com ele na mão dá para abrir a visita exata no CRM. Clique em qualquer número para ver as visitas e levar a lista para a conversa.</div>
     </div>
   </div>`;
 }
@@ -1698,7 +1754,7 @@ async function carregarDados(){
         .map(c=>c.slice(0,12).map(x=>String(x).replace(/\|/g,'/').replace(/\s+/g,' ').trim()));
       const linhas=rows
         .filter(c=>/^\d{2}\/\d{2}\/\d{4}$/.test(c[2]||''))
-        .map(c=>[c[2],c[3],c[4],c[5],c[6],c[8],c[10],c[11],c[9]].join('|'));
+        .map(c=>[c[2],c[3],c[4],c[5],c[6],c[8],c[10],c[11],c[7],c[9]].join('|'));  /* …|FAC|OBS */
       return `### ${s.emp}\n`+linhas.join('\n');
     }));
     document.getElementById('dados').textContent=partes.join('\n\n');
