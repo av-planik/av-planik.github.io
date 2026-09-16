@@ -1126,41 +1126,156 @@ function renderVisitas(){
   inp.oninput=()=>{state.busca=inp.value;const r=tabelaVisitas(cur(),state.busca);$('#vtab').innerHTML=r.html;};
 }
 
+/* ---------------------------------------------------------------------------
+   ABA DADOS — fontes + erros de preenchimento
+
+   Tudo aqui é CALCULADO da base carregada no momento (nada de texto fixo
+   descrevendo a fotografia de agosto): a cada ↻ Atualizar a lista de erros
+   reflete o que está nas planilhas agora. Cada item é clicável e abre as
+   linhas exatas, para cobrar o stand com o registro na mão.
+   --------------------------------------------------------------------------- */
+/* normaliza nome para achar grafias diferentes da mesma pessoa
+   ("DESIDERA", "Desiderá ", "DESIDERÁ" → DESIDERA) */
+const chaveNome=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+  .toUpperCase().replace(/[^A-Z0-9]/g,'');
+
+/* Só reporta grafia que o BI NÃO consegue unificar sozinho — ou seja, que de
+   fato divide a mesma pessoa em duas linhas de ranking. Diferença apenas de
+   maiúscula/minúscula não entra (o agrupamento já é em caixa alta); acento,
+   espaço a mais e letra trocada entram. */
+function gruposGrafia(rows,campoChave,campoMostra){
+  const m=new Map();
+  for(const r of rows){
+    const chaveBI=String(r[campoChave]||'').trim();
+    const mostra=String(r[campoMostra]||'').trim()||chaveBI;
+    if(!chaveBI||chaveBI.startsWith('('))continue;
+    const k=chaveNome(chaveBI);if(!k)continue;
+    if(!m.has(k))m.set(k,new Map());
+    const g=m.get(k);
+    if(!g.has(chaveBI))g.set(chaveBI,{n:0,mostra});
+    g.get(chaveBI).n++;
+  }
+  return [...m.values()].filter(g=>g.size>1)
+    .map(g=>[...g.values()].sort((a,b)=>b.n-a.n).map(v=>[v.mostra,v.n]));
+}
+
 function renderDados(){
+  const HOJE=new Date();HOJE.setHours(23,59,59,999);
+  const N=ALL.length;
   const key=r=>[r.emp,r.dt,r.ger,r.cor,r.tipo,r.ev].join('~');
   const cnt=new Map();ALL.forEach(r=>cnt.set(key(r),(cnt.get(key(r))||0)+1));
   const dups=[...cnt.values()].filter(v=>v>1).reduce((s,v)=>s+v-1,0);
   const dupRows=ALL.filter(r=>cnt.get(key(r))>1);
-  const semGer=ALL.filter(r=>r.ger==='(SEM GERENTE)');
-  const semOrig=ALL.filter(r=>r.origem==='NÃO INFORMADA');
-  const semObs=ALL.filter(r=>!r.obs).length;
-  const fix=ALL.filter(r=>GER_FIX[r.gerRaw]);
+  const dupDias=conta(dupRows,'dt').slice(0,2).map(([d,v])=>`${d} (${v})`).join(', ');
+
+  const futuras   = ALL.filter(r=>r.date>HOJE);
+  const semGer    = ALL.filter(r=>r.ger==='(SEM GERENTE)');
+  const semCor    = ALL.filter(r=>r.cor==='(SEM CORRETOR)');
+  const semTipo   = ALL.filter(r=>r.tipo==='—');
+  const semEv     = ALL.filter(r=>r.ev==='—');
+  const semOrig   = ALL.filter(r=>r.origem==='NÃO INFORMADA');
+  const semObs    = ALL.filter(r=>!r.obs);
+  const grafGer   = gruposGrafia(ALL,'ger','ger');
+  const grafCor   = gruposGrafia(ALL,'cor','corD');
+  const origRaras = conta(ALL,'origem').filter(([o,v])=>v===1&&o!=='NÃO INFORMADA');
+
+  /* itens de erro, do mais grave para o menos — só entra o que existe hoje */
+  const itens=[];
+  if(DATAS_FORA.length)itens.push({tag:'Data inválida',cor:'var(--bad)',bg:'var(--bad-bg)',
+    txt:`<b class="num">${fmt(DATAS_FORA.length)}</b> lançamento(s) <b>fora da base</b> por data impossível (ano fora de ${ANO_MIN}–${ANO_MAX}): ${DATAS_FORA.map(d=>`<b>${esc(d.dt)}</b> (${esc(d.emp)}${d.cor?' · '+esc(d.cor):''})`).join('; ')}. Corrija na planilha e clique em ↻ Atualizar — a visita volta a contar.`});
+  if(futuras.length)itens.push({tag:'Data no futuro',cor:'var(--bad)',bg:'var(--bad-bg)',rows:futuras,
+    titulo:'Visitas com data no futuro',
+    txt:`<b class="num">${fmt(futuras.length)}</b> visita(s) com data depois de hoje (${futuras.slice(0,3).map(r=>esc(r.dt)+' · '+esc(r.emp)).join('; ')}${futuras.length>3?'…':''}) — quase sempre mês ou ano digitado errado.`});
+  if(dups)itens.push({tag:'Duplicatas',cor:'var(--warn)',bg:'var(--warn-bg)',rows:dupRows,
+    titulo:'Possíveis lançamentos duplicados',
+    txt:`<b class="num">${fmt(dups)}</b> lançamento(s) repetido(s) — mesmo dia, gerente, corretor, tipo e canal${dupDias?`; concentrados em ${dupDias}`:''}. Somam no total oficial; vale conferir no stand.`});
+  if(grafGer.length)itens.push({tag:'Nome de gerente',cor:'var(--warn)',bg:'var(--warn-bg)',
+    txt:`${fmt(grafGer.length)} gerente(s) lançado(s) com grafias diferentes: ${grafGer.map(g=>g.map(([n,v])=>`<b>${esc(n)}</b> (${v})`).join(' / ')).join(' · ')}. O BI unifica na leitura, mas o certo é padronizar na planilha.`});
+  if(grafCor.length)itens.push({tag:'Nome de corretor',cor:'var(--warn)',bg:'var(--warn-bg)',
+    txt:`${fmt(grafCor.length)} corretor(es) com grafias diferentes: ${grafCor.slice(0,6).map(g=>g.map(([n,v])=>`<b>${esc(n)}</b> (${v})`).join(' / ')).join(' · ')}${grafCor.length>6?'…':''}. Grafia dupla divide o ranking da mesma pessoa.`});
+  if(semGer.length)itens.push({tag:'Sem gerente',cor:'var(--warn)',bg:'var(--warn-bg)',rows:semGer,
+    titulo:'Visitas sem gerente informado',
+    txt:`<b class="num">${fmt(semGer.length)}</b> visita(s) sem gerente (${pct(semGer.length,N)} da base).`});
+  if(semCor.length)itens.push({tag:'Sem corretor',cor:'var(--warn)',bg:'var(--warn-bg)',rows:semCor,
+    titulo:'Visitas sem corretor informado',
+    txt:`<b class="num">${fmt(semCor.length)}</b> visita(s) sem corretor — ficam fora do ranking de indicações.`});
+  if(semTipo.length)itens.push({tag:'Sem tipo',cor:'var(--warn)',bg:'var(--warn-bg)',rows:semTipo,
+    titulo:'Visitas sem tipo de visita',
+    txt:`<b class="num">${fmt(semTipo.length)}</b> visita(s) sem tipo (indicação / vez / retorno / telefone).`});
+  if(semEv.length)itens.push({tag:'Sem canal',cor:'var(--warn)',bg:'var(--warn-bg)',rows:semEv,
+    titulo:'Visitas sem canal (EV)',
+    txt:`<b class="num">${fmt(semEv.length)}</b> visita(s) sem canal — não entram no recorte de nenhum perfil por canal.`});
+  if(semOrig.length)itens.push({tag:'Sem origem',cor:'var(--s1)',bg:'var(--track)',rows:semOrig,
+    titulo:'Visitas sem origem informada',
+    txt:`<b class="num">${fmt(semOrig.length)}</b> visita(s) sem origem (${pct(semOrig.length,N)} da base).`});
+  if(semObs.length)itens.push({tag:'Sem observação',cor:'var(--s1)',bg:'var(--track)',rows:semObs,
+    titulo:'Visitas sem observação do corretor',
+    txt:`<b class="num">${pct(semObs.length,N)}</b> das visitas sem observação (${fmt(semObs.length)} de ${fmt(N)}) — sem ela a leitura de temperatura fica cega.`});
+  if(origRaras.length)itens.push({tag:'Origem avulsa',cor:'var(--s1)',bg:'var(--track)',
+    txt:`${origRaras.length} origem(ns) com um único registro (${origRaras.slice(0,5).map(([o])=>`<b>${esc(o)}</b>`).join(', ')}${origRaras.length>5?'…':''}) — costuma ser digitação livre fora da lista.`});
+
+  /* preenchimento por stand: onde cobrar */
+  const linhasStand=[...new Set(ALL.map(r=>r.emp))].map(e=>{
+    const rs=ALL.filter(r=>r.emp===e);
+    const ult=rs.length?rs[rs.length-1].date:null;
+    const dias=ult?Math.round((new Date().setHours(0,0,0,0)-new Date(ult).setHours(0,0,0,0))/DAY):null;
+    const falta=c=>rs.filter(c).length;
+    return {e,n:rs.length,ult,dias,
+      g:falta(r=>r.ger==='(SEM GERENTE)'), c:falta(r=>r.cor==='(SEM CORRETOR)'),
+      t:falta(r=>r.tipo==='—'), o:falta(r=>r.origem==='NÃO INFORMADA'), b:falta(r=>!r.obs)};
+  }).sort((a,b)=>b.n-a.n);
+  const cel=(v,tot,rows,tit)=>v?`<td class="r num" ${clk(tit,rows,'var(--warn)')} style="cursor:pointer;color:var(--warn)"><b>${fmt(v)}</b> <span class="subtle">${pct(v,tot)}</span></td>`
+                               :`<td class="r num" style="color:var(--muted)">—</td>`;
+
+  const fonte=(typeof DADOS_INFO!=='undefined'&&DADOS_INFO&&DADOS_INFO.fonte==='ao vivo')
+    ? `Planilhas lidas <b>ao vivo</b> às ${DADOS_INFO.quando.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`
+    : `Fotografia embutida dos dados (sem conexão com o Sheets no momento)`;
+
   $('#p-dados').innerHTML=`<div class="grid">
     <div class="card c6">
       <div class="hd"><h3>Fontes de dados</h3></div>
       <table class="tbl">
-        <tr><td><b>Base 01</b> · FREI CANECA — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">aba NIK FREI CANECA</td></tr>
-        <tr><td><b>Base 02</b> · CORE + LINN + NIK VILA MARIANA — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">3 abas</td></tr>
-        <tr><td><b>Base 03</b> · TAJ + NUV — Visitação Semanal 2026</td><td class="r" style="color:var(--muted)">abas TAJ IBIRAPUERA e NUV MOEMA</td></tr>
+        <tr><td><b>Base 01</b> · FREI CANECA</td><td class="r" style="color:var(--muted)">aba NIK FREI CANECA</td></tr>
+        <tr><td><b>Base 02</b> · CORE + LINN + NIK VILA MARIANA</td><td class="r" style="color:var(--muted)">3 abas</td></tr>
+        <tr><td><b>Base 03</b> · TAJ + NUV</td><td class="r" style="color:var(--muted)">abas TAJ IBIRAPUERA e NUV MOEMA</td></tr>
       </table>
-      <div class="empty" style="text-align:left;padding-top:12px">Esta versão usa uma fotografia dos dados lida em <b>26/08/2026</b> (${fmt(ALL.length)} visitas, ${brY(MIN_D)} a ${brY(MAX_D)}). A conexão ao vivo com o Sheets (botão "Atualizar") entra na versão publicada — passo a passo no documento do projeto.</div>
+      <div class="empty" style="text-align:left;padding-top:12px">${fonte} — <b class="num">${fmt(N)}</b> visitas, de ${brY(MIN_D)} a ${brY(MAX_D)}. O botão <b>↻ Atualizar</b> relê as planilhas e recalcula esta aba.</div>
     </div>
+
     <div class="card c6">
-      <div class="hd"><h3>Qualidade dos dados</h3><span class="hint">clique nos itens para ver os registros</span></div>
+      <div class="hd"><h3>Erros de preenchimento</h3><span class="hint">${itens.length?'clique no item para ver as linhas':''}</span></div>
       <div class="dq">
-        ${DATAS_FORA.length?`<div class="it"><span class="tag" style="color:var(--bad);background:var(--bad-bg)">Data inválida</span><span><b class="num">${fmt(DATAS_FORA.length)}</b> lançamento(s) fora da base por data implausível (ano fora de ${ANO_MIN}–${ANO_MAX}) — provável erro de digitação na planilha: ${DATAS_FORA.map(d=>`<b>${esc(d.dt)}</b> (${esc(d.emp)}${d.cor?' · '+esc(d.cor):''})`).join('; ')}. Corrija a data na planilha e clique em ↻ Atualizar: a visita volta a contar.</span></div>`:''}
-        <div class="it" ${clk('Possíveis lançamentos duplicados',dupRows,'var(--warn)')} style="cursor:pointer"><span class="tag warn">Duplicatas</span><span><b class="num">${fmt(dups)}</b> lançamentos repetidos (mesmo dia, gerente, corretor, tipo e canal — concentrados em 22/08 no Frei Caneca). Somam no total oficial; vale conferir no stand.</span></div>
-        <div class="it" ${clk('Registros com grafia DESIDER',fix,'var(--warn)')} style="cursor:pointer"><span class="tag warn">Nomes</span><span>"DESIDER" unificado com "DESIDERÁ" nesta versão (<b class="num">${fmt(fix.length)}</b> registro). No BI anterior apareciam como dois gerentes.</span></div>
-        <div class="it" ${clk('Visitas do canal Abyara (gerentes agrupados)',ALL.filter(r=>r.ger==='ABYARA'),'var(--s3)')} style="cursor:pointer"><span class="tag info">Abyara</span><span>Gerentes da Abyara (imobiliária externa) são exibidos agrupados como <b>"ABYARA"</b> em rankings, filtros e tabelas — decisão do Jorge em 26/08 (<b class="num">${fmt(ALL.filter(r=>r.ger==='ABYARA').length)}</b> visitas).</span></div>
-        <div class="it" ${clk('Visitas sem gerente informado',semGer,'var(--warn)')} style="cursor:pointer"><span class="tag warn">Sem gerente</span><span><b class="num">${fmt(semGer.length)}</b> visitas sem gerente informado.</span></div>
-        <div class="it" ${clk('Visitas sem origem informada',semOrig,'var(--s1)')} style="cursor:pointer"><span class="tag info">Sem origem</span><span><b class="num">${fmt(semOrig.length)}</b> visitas sem origem — em geral os lançamentos duplicados de 22/08.</span></div>
-        <div class="it"><span class="tag info">Observações</span><span><b class="num">${pct(semObs,ALL.length)}</b> das visitas sem observação do corretor (quase todas no Frei Caneca). CORE e LINN preenchem bem — é o padrão a espalhar.</span></div>
-        <div class="it"><span class="tag info">Origem</span><span>Taxonomia de origem tem categorias que se sobrepõem (VEZ × PASSAGEM PELO STAND; ONLINE × INTERNET; 3 tipos de CARTEIRA). Mantida como está — unificação é decisão de negócio.</span></div>
+        ${itens.length?itens.map(i=>`
+          <div class="it" ${i.rows?clk(i.titulo,i.rows,i.cor)+' style="cursor:pointer"':''}>
+            <span class="tag" style="color:${i.cor};background:${i.bg}">${i.tag}</span>
+            <span>${i.txt}</span>
+          </div>`).join(''):
+          `<div class="it"><span class="tag" style="color:var(--good);background:var(--good-bg)">Em ordem</span><span>Nenhum erro de preenchimento encontrado nas bases agora. Nada a cobrar.</span></div>`}
       </div>
+    </div>
+
+    <div class="card c12">
+      <div class="hd"><h3>Preenchimento por stand</h3><span class="hint">campos em branco, por empreendimento — clique no número para ver as visitas</span></div>
+      <div class="vtable-wrap"><table class="tbl">
+        <thead><tr><th>Empreendimento</th><th class="r">Visitas</th><th class="r">Último lançamento</th>
+          <th class="r">Sem gerente</th><th class="r">Sem corretor</th><th class="r">Sem tipo</th><th class="r">Sem origem</th><th class="r">Sem observação</th></tr></thead>
+        <tbody>${linhasStand.map(s=>{
+          const rs=ALL.filter(r=>r.emp===s.e);
+          return `<tr>
+            <td><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${EMP_META[s.e]?.cor||'var(--s0)'};margin-right:6px"></span>${esc(EMP_META[s.e]?.curta||s.e)}</td>
+            <td class="r num"><b>${fmt(s.n)}</b></td>
+            <td class="r num" style="color:var(--muted)">${s.ult?brY(s.ult)+' · '+(s.dias<=0?'hoje':s.dias===1?'ontem':'há '+s.dias+' dias'):'—'}</td>
+            ${cel(s.g,s.n,rs.filter(r=>r.ger==='(SEM GERENTE)'),'Sem gerente · '+s.e)}
+            ${cel(s.c,s.n,rs.filter(r=>r.cor==='(SEM CORRETOR)'),'Sem corretor · '+s.e)}
+            ${cel(s.t,s.n,rs.filter(r=>r.tipo==='—'),'Sem tipo · '+s.e)}
+            ${cel(s.o,s.n,rs.filter(r=>r.origem==='NÃO INFORMADA'),'Sem origem · '+s.e)}
+            ${cel(s.b,s.n,rs.filter(r=>!r.obs),'Sem observação · '+s.e)}
+          </tr>`}).join('')}</tbody>
+      </table></div>
+      <div class="empty" style="text-align:left;padding-top:10px">“Último lançamento” é a data mais recente que o stand registrou, contada até <b>hoje</b> — stand que parou de lançar aparece aqui antes de sumir dos gráficos.</div>
     </div>
   </div>`;
 }
-
 
 /* ===== V3 — "a ideal": leitura executiva, temperatura, tabela por stand ===== */
 
@@ -1545,6 +1660,12 @@ const PERFIS={
  coord_stand:      {lb:'Coordenador Stand', escopo:(r,v)=>r.emp===v, vinculo:'stand'}
 };
 
+/* Aba "Dados" (fontes + erros de preenchimento das bases): nominal, não por
+   perfil — só quem está nesta lista vê, mesmo sendo administrador. Para
+   liberar outra pessoa, acrescente o e-mail aqui e republique o index.html. */
+const DONOS_DADOS=['jorge.lima@planik.com.br','admin@demo'];
+const vePainelDados=e=>DONOS_DADOS.includes(emailNorm(e));
+
 const DEMO=location.protocol==='file:';
 const DEMO_CONTAS={
  'admin@demo':{perfil:'admin'}, 'leitura@demo':{perfil:'leitura'}, 'house@demo':{perfil:'diretor_house'},
@@ -1718,7 +1839,7 @@ let VISAO=null;
 function aplicarVisao(){
   const alvo=VISAO||SESSAO;
   window.ESCOPO=mkEscopo(alvo);
-  window.TAB_VISIVEL=k=>k!=='dados'||alvo.perfil==='admin';
+  window.TAB_VISIVEL=k=>k!=='dados'||vePainelDados(alvo.email);
   try{iniciarBI()}catch(e){console.error(e)}
   const bg=document.getElementById('btn-gear');
   if(bg)bg.style.display=(SESSAO&&SESSAO.perfil==='admin'&&!VISAO)?'':'none';
@@ -1739,7 +1860,7 @@ async function entrarSessao(conta){
   /* log de acesso: 1 registro por entrada (login ou retorno com sessão salva).
      Fire-and-forget — se falhar, não atrapalha o uso. Só o admin lê (regras). */
   if(!DEMO&&DB){try{DB.collection('log_acessos').add({email:SESSAO.email,perfil:SESSAO.perfil,quando:new Date().toISOString()}).catch(()=>{})}catch(_){}}
-  window.ESCOPO=mkEscopo(SESSAO);window.TAB_VISIVEL=k=>k!=='dados'||SESSAO.perfil==='admin';
+  window.ESCOPO=mkEscopo(SESSAO);window.TAB_VISIVEL=k=>k!=='dados'||vePainelDados(SESSAO.email);
   await carregarDados();
   $L('#loginOverlay').style.display='none';
   document.body.classList.remove('locked');
