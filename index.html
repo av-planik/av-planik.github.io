@@ -653,6 +653,10 @@ const GER_FIX={'DESIDER':'DESIDERÁ'};
 const WD=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 
 /* ---------- parse ---------- */
+/* Faixa de datas aceitável: a base é de visitação corrente, não histórico.
+   Ano-limite superior = ano que vem, para não barrar agendamento legítimo. */
+const ANO_MIN=2024, ANO_MAX=new Date().getFullYear()+1;
+const DATAS_FORA=[];   // linhas descartadas por data implausível (aba Dados)
 function parseData(){
   const txt=document.getElementById('dados').textContent;
   let rows=[];let emp=null;
@@ -662,6 +666,14 @@ function parseData(){
     const p=l.split('|');if(p.length<6||!emp)continue;
     const [dt,ger,cor,tipo,ev,orig,unid,mtg,...ob]=p;
     const [d,m,y]=dt.split('/').map(Number);if(!y)continue;
+    /* GUARDA DE DATA (16/09/2026): um "16/09/0206" digitado na planilha fazia o
+       período da base ir do ano 206 até 2026 — 1.820 anos, ~665 mil colunas
+       diárias — e travava o navegador. Data implausível sai da base e é
+       reportada na aba Dados, em vez de derrubar o BI inteiro. */
+    if(!(y>=ANO_MIN&&y<=ANO_MAX)||!(m>=1&&m<=12)||!(d>=1&&d<=31)){
+      DATAS_FORA.push({emp,dt,ger:(ger||'').trim(),cor:(cor||'').trim()});
+      continue;
+    }
     const gRaw=(ger||'').trim().toUpperCase();
     const evV=(ev||'').trim().toUpperCase();
     // gerentes da Abyara (imobiliária externa) agrupados como "ABYARA"
@@ -954,7 +966,14 @@ function calHeat(rows){
   if(!rows.length)return '<div class="empty">Sem visitas no recorte.</div>';
   const porDia=new Map();
   rows.forEach(r=>{const k=iso(r.date);if(!porDia.has(k))porDia.set(k,[]);porDia.get(k).push(r)});
-  const w0=segunda(state.from), w1=segunda(state.to);
+  /* Teto de segurança: o calendário desenha 7 células por semana. Um período
+     absurdo (ex.: data digitada errada na planilha) geraria centenas de
+     milhares de células e travaria o navegador. Acima de 78 semanas (1½ ano)
+     o calendário mostra só as últimas 78 — nunca tenta desenhar o impossível. */
+  const CAL_MAX_SEM=78;
+  let w0=segunda(state.from); const w1=segunda(state.to);
+  let cortado=false;
+  if((w1-w0)/(7*DAY)>CAL_MAX_SEM){ w0=new Date(+w1-CAL_MAX_SEM*7*DAY); cortado=true; }
   const sems=[];
   for(let s=new Date(w0);s<=w1;s=new Date(+s+7*DAY))sems.push(new Date(s));
   const max=Math.max(1,...[...porDia.values()].map(v=>v.length));
@@ -976,7 +995,7 @@ function calHeat(rows){
     return `<tr><th class="rowh" style="white-space:nowrap"><span ${rowRows.length?clk('Semana '+wl,rowRows):''} style="cursor:${rowRows.length?'pointer':'default'}">${wl}</span></th>${cels}<td class="n r"><b ${rowRows.length?clk('Semana '+wl,rowRows):''} style="cursor:pointer">${fmt(rowRows.length)}</b></td></tr>`;
   }).join('');
   const foot=`<tr style="border-top:2px solid var(--border)"><th class="rowh">Total por dia</th>${totWd.map((v,i)=>`<td class="cell" style="font-weight:700;${v?'cursor:pointer':''}" ${v?clk('Todas as '+WD[i],rowsWd[i]):''}>${fmt(v)}</td>`).join('')}<td class="n r"><b>${fmt(rows.length)}</b></td></tr>`;
-  return `<div class="heat"><table class="tbl"><thead><tr><th>Semana</th>${WD.map(d=>`<th class="r" style="text-align:center">${d}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>${linhas}${foot}</tbody></table></div>`;
+  return `${cortado?'<div class="empty" style="text-align:left;padding:0 0 8px;color:var(--warn)">Período muito longo para o calendário — mostrando as últimas 78 semanas.</div>':''}<div class="heat"><table class="tbl"><thead><tr><th>Semana</th>${WD.map(d=>`<th class="r" style="text-align:center">${d}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>${linhas}${foot}</tbody></table></div>`;
 }
 
 /* ---------- barra de filtros (com busca estilo Excel) ---------- */
@@ -1129,6 +1148,7 @@ function renderDados(){
     <div class="card c6">
       <div class="hd"><h3>Qualidade dos dados</h3><span class="hint">clique nos itens para ver os registros</span></div>
       <div class="dq">
+        ${DATAS_FORA.length?`<div class="it"><span class="tag" style="color:var(--bad);background:var(--bad-bg)">Data inválida</span><span><b class="num">${fmt(DATAS_FORA.length)}</b> lançamento(s) fora da base por data implausível (ano fora de ${ANO_MIN}–${ANO_MAX}) — provável erro de digitação na planilha: ${DATAS_FORA.map(d=>`<b>${esc(d.dt)}</b> (${esc(d.emp)}${d.cor?' · '+esc(d.cor):''})`).join('; ')}. Corrija a data na planilha e clique em ↻ Atualizar: a visita volta a contar.</span></div>`:''}
         <div class="it" ${clk('Possíveis lançamentos duplicados',dupRows,'var(--warn)')} style="cursor:pointer"><span class="tag warn">Duplicatas</span><span><b class="num">${fmt(dups)}</b> lançamentos repetidos (mesmo dia, gerente, corretor, tipo e canal — concentrados em 22/08 no Frei Caneca). Somam no total oficial; vale conferir no stand.</span></div>
         <div class="it" ${clk('Registros com grafia DESIDER',fix,'var(--warn)')} style="cursor:pointer"><span class="tag warn">Nomes</span><span>"DESIDER" unificado com "DESIDERÁ" nesta versão (<b class="num">${fmt(fix.length)}</b> registro). No BI anterior apareciam como dois gerentes.</span></div>
         <div class="it" ${clk('Visitas do canal Abyara (gerentes agrupados)',ALL.filter(r=>r.ger==='ABYARA'),'var(--s3)')} style="cursor:pointer"><span class="tag info">Abyara</span><span>Gerentes da Abyara (imobiliária externa) são exibidos agrupados como <b>"ABYARA"</b> em rankings, filtros e tabelas — decisão do Jorge em 26/08 (<b class="num">${fmt(ALL.filter(r=>r.ger==='ABYARA').length)}</b> visitas).</span></div>
